@@ -1,0 +1,30 @@
+{
+  "name": "color-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.4.0",
+  "scripts": {
+    "dev": "concurrently -k -n frontend,backend -c cyan,green \"pnpm dev:frontend\" \"pnpm dev:backend\"",
+    "dev:frontend": "pnpm --filter @color-assistant/frontend start",
+    "dev:backend": "uv run --project backend uvicorn --app-dir backend app.main:app --reload --host 0.0.0.0 --port 8000",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d db",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:wait": "uv run --project backend python backend/scripts/wait_for_db.py",
+    "migrate": "pnpm db:wait && uv run --project backend alembic -c backend/alembic.ini upgrade head",
+    "openapi:export": "uv run --project backend python backend/scripts/export_openapi.py",
+    "generate:client": "pnpm openapi:export && pnpm --filter @color-assistant/api-client run generate",
+    "lint": "pnpm lint:frontend && pnpm lint:backend",
+    "lint:frontend": "pnpm --filter @color-assistant/frontend run lint",
+    "lint:backend": "uv run --project backend ruff check backend/app backend/scripts backend/tests",
+    "typecheck": "pnpm typecheck:frontend && pnpm typecheck:backend",
+    "typecheck:frontend": "pnpm --filter @color-assistant/frontend run typecheck",
+    "typecheck:backend": "uv run --project backend mypy --config-file backend/pyproject.toml backend/app",
+    "test": "pnpm test:frontend && pnpm test:backend",
+    "test:frontend": "pnpm --filter @color-assistant/frontend run test",
+    "test:backend": "uv run --project backend pytest backend/tests"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "^0.67.6",
+    "concurrently": "^9.2.1"
+  }
+}
