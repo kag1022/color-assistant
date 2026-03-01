@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -9,6 +10,14 @@ import { analyzeColorUpload } from '@/src/api/colorAnalyzeUpload';
 import { useAppSettings } from '@/src/features/accessibility/app-settings-context';
 import { useAnalysis } from '@/src/features/color/analysis-context';
 
+type CaptureSource = 'camera' | 'library';
+
+type ImagePayload = {
+  uri: string;
+  name: string;
+  type: string;
+};
+
 export default function CaptureScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
@@ -16,20 +25,57 @@ export default function CaptureScreen() {
   const { settings } = useAppSettings();
   const { setResult, setLastError } = useAnalysis();
 
+  const pickImageFromCamera = async (): Promise<ImagePayload> => {
+    if (!cameraRef.current) {
+      throw new Error('Camera is not ready.');
+    }
+
+    const photo = await cameraRef.current.takePictureAsync({
+      quality: 0.8,
+      skipProcessing: false,
+    });
+    if (!photo?.uri) {
+      throw new Error('Failed to capture image.');
+    }
+
+    return {
+      uri: photo.uri,
+      name: `fabric-${Date.now()}.jpg`,
+      type: 'image/jpeg',
+    };
+  };
+
+  const pickImageFromLibrary = async (): Promise<ImagePayload> => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error('写真ライブラリへのアクセス許可が必要です。');
+    }
+
+    const selected = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: false,
+      quality: 0.8,
+    });
+
+    if (selected.canceled || selected.assets.length === 0) {
+      throw new Error('画像選択がキャンセルされました。');
+    }
+
+    const asset = selected.assets[0];
+    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const normalizedExt = ext === 'jpg' ? 'jpeg' : ext;
+
+    return {
+      uri: asset.uri,
+      name: asset.fileName ?? `library-${Date.now()}.${ext}`,
+      type: asset.mimeType ?? `image/${normalizedExt}`,
+    };
+  };
+
   const analyzeMutation = useMutation({
-    mutationFn: async () => {
-      if (!cameraRef.current) {
-        throw new Error('Camera is not ready.');
-      }
-
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        skipProcessing: false,
-      });
-
-      if (!photo?.uri) {
-        throw new Error('Failed to capture image.');
-      }
+    mutationFn: async (source: CaptureSource) => {
+      const selectedImage =
+        source === 'library' ? await pickImageFromLibrary() : await pickImageFromCamera();
 
       const token = await login({
         baseUrl: settings.apiBaseUrl,
@@ -42,9 +88,9 @@ export default function CaptureScreen() {
         token: token.access_token,
         uploadMode: settings.uploadMode,
         file: {
-          uri: photo.uri,
-          name: `fabric-${Date.now()}.jpg`,
-          type: 'image/jpeg',
+          uri: selectedImage.uri,
+          name: selectedImage.name,
+          type: selectedImage.type,
         },
         facility_id: 'facility-a',
         worker_id: 'worker-1',
@@ -88,11 +134,18 @@ export default function CaptureScreen() {
         <Text style={styles.caption}>布地を中央に合わせて撮影してください。</Text>
         <Pressable
           style={[styles.primaryButton, analyzeMutation.isPending && styles.disabledButton]}
-          onPress={() => analyzeMutation.mutate()}
+          onPress={() => analyzeMutation.mutate('camera')}
           disabled={analyzeMutation.isPending}>
           <Text style={styles.buttonText}>
-            {analyzeMutation.isPending ? '解析中...' : '撮影して色を判定'}
+            {analyzeMutation.isPending ? '解析中...' : 'カメラで撮影して判定'}
           </Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.secondaryButton, analyzeMutation.isPending && styles.disabledButton]}
+          onPress={() => analyzeMutation.mutate('library')}
+          disabled={analyzeMutation.isPending}>
+          <Text style={styles.secondaryButtonText}>ギャラリーから画像を選択</Text>
         </Pressable>
         {analyzeMutation.error ? (
           <Text style={styles.errorText}>{analyzeMutation.error.message}</Text>
@@ -146,9 +199,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  secondaryButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#1D4ED8',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   errorText: {
     color: '#B91C1C',
     fontSize: 14,
   },
 });
-

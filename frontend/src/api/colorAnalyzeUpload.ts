@@ -1,4 +1,5 @@
 import * as generatedClient from '@color-assistant/api-client';
+import { z } from 'zod';
 
 import { parseApiResponse } from '@/src/api/http';
 import { ColorAnalyzeResponse } from '@/src/api/types';
@@ -26,6 +27,27 @@ const GENERATED_ANALYZE_CANDIDATES = [
   'colorAnalyze',
   'analyzeColor',
 ] as const;
+
+const colorAlternativeSchema = z.object({
+  color_name_ja: z.string(),
+  hex: z.string(),
+  confidence: z.number(),
+});
+
+const colorAnalyzeResponseSchema = z.object({
+  analysis_id: z.string(),
+  dominant_hex: z.string(),
+  dominant_rgb: z.object({
+    r: z.number(),
+    g: z.number(),
+    b: z.number(),
+  }),
+  color_name_ja: z.string(),
+  confidence: z.number(),
+  alternatives: z.array(colorAlternativeSchema),
+  speech_text_ja: z.string(),
+  processing_ms: z.number(),
+});
 
 function buildFormData(input: AnalyzeInput): FormData {
   const formData = new FormData();
@@ -58,14 +80,52 @@ function pickGeneratedAnalyze(): ((payload: unknown) => Promise<unknown>) | null
   return null;
 }
 
-function unwrapGeneratedResponse(value: unknown): unknown {
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    if ('data' in record) {
-      return record.data;
+function parseGeneratedError(errorPayload: unknown): string {
+  if (errorPayload && typeof errorPayload === 'object') {
+    const record = errorPayload as Record<string, unknown>;
+    const message = record.message;
+    const hint = record.hint;
+    if (typeof message === 'string' && typeof hint === 'string' && hint.length > 0) {
+      return `${message} (${hint})`;
+    }
+    if (typeof message === 'string') {
+      return message;
     }
   }
-  return value;
+  return 'Analyze request failed.';
+}
+
+function normalizeAnalyzeResponse(value: unknown): ColorAnalyzeResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Analyze response is empty.');
+  }
+
+  const record = value as Record<string, unknown>;
+  const normalized = {
+    analysis_id: record.analysis_id ?? record.analysisId,
+    dominant_hex: record.dominant_hex ?? record.dominantHex,
+    dominant_rgb: record.dominant_rgb ?? record.dominantRgb,
+    color_name_ja: record.color_name_ja ?? record.colorNameJa,
+    confidence: record.confidence,
+    alternatives: record.alternatives,
+    speech_text_ja: record.speech_text_ja ?? record.speechTextJa,
+    processing_ms: record.processing_ms ?? record.processingMs,
+  };
+
+  return colorAnalyzeResponseSchema.parse(normalized);
+}
+
+function unwrapGeneratedResponse(value: unknown): ColorAnalyzeResponse {
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if ('error' in record && record.error) {
+      throw new Error(parseGeneratedError(record.error));
+    }
+    if ('data' in record) {
+      return normalizeAnalyzeResponse(record.data);
+    }
+  }
+  return normalizeAnalyzeResponse(value);
 }
 
 async function analyzeWithGeneratedClient(input: AnalyzeInput): Promise<ColorAnalyzeResponse> {
@@ -86,7 +146,7 @@ async function analyzeWithGeneratedClient(input: AnalyzeInput): Promise<ColorAna
   for (const attempt of attempts) {
     try {
       const result = await attempt();
-      return unwrapGeneratedResponse(result) as ColorAnalyzeResponse;
+      return unwrapGeneratedResponse(result);
     } catch (error) {
       lastError = error;
     }

@@ -44,6 +44,18 @@ export default function ResultScreen() {
     );
   }
 
+  if (!result.dominant_rgb) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorTitle}>結果形式エラー</Text>
+        <Text style={styles.errorBody}>解析結果の形式が不正です。再撮影してください。</Text>
+        <Pressable style={styles.primaryButton} onPress={() => router.push('/(tabs)/capture')}>
+          <Text style={styles.buttonText}>撮影画面に戻る</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>判定結果</Text>
@@ -165,4 +177,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

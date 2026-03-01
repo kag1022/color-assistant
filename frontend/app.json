@@ -39,6 +39,12 @@
         {
           "cameraPermission": "布地の色を判定するためにカメラを使用します。"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "色判定のために写真ライブラリの画像を使用します。"
+        }
       ]
     ],
     "experiments": {
