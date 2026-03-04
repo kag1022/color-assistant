@@ -8,6 +8,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { login } from '@/src/api/auth';
 import { analyzeColorUpload } from '@/src/api/colorAnalyzeUpload';
 import { useAppSettings } from '@/src/features/accessibility/app-settings-context';
+import { useFeedback } from '@/src/features/accessibility/useFeedback';
 import { useAnalysis } from '@/src/features/color/analysis-context';
 
 type CaptureSource = 'camera' | 'library';
@@ -24,6 +25,7 @@ export default function CaptureScreen() {
   const cameraRef = useRef<CameraView | null>(null);
   const { settings } = useAppSettings();
   const { setResult, setLastError } = useAnalysis();
+  const { playHapticsLight, playHapticsSuccess, playHapticsError, speak } = useFeedback();
 
   const pickImageFromCamera = async (): Promise<ImagePayload> => {
     if (!cameraRef.current) {
@@ -100,10 +102,13 @@ export default function CaptureScreen() {
     onSuccess: (result) => {
       setLastError(null);
       setResult(result);
+      playHapticsSuccess();
       router.push('/(tabs)/result');
     },
     onError: (error: Error) => {
       setLastError(error.message);
+      playHapticsError();
+      router.push('/(tabs)/result');
     },
   });
 
@@ -130,27 +135,42 @@ export default function CaptureScreen() {
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
-      <View style={styles.controls}>
-        <Text style={styles.caption}>布地を中央に合わせて撮影してください。</Text>
-        <Pressable
-          style={[styles.primaryButton, analyzeMutation.isPending && styles.disabledButton]}
-          onPress={() => analyzeMutation.mutate('camera')}
-          disabled={analyzeMutation.isPending}>
-          <Text style={styles.buttonText}>
-            {analyzeMutation.isPending ? '解析中...' : 'カメラで撮影して判定'}
-          </Text>
-        </Pressable>
 
-        <Pressable
-          style={[styles.secondaryButton, analyzeMutation.isPending && styles.disabledButton]}
-          onPress={() => analyzeMutation.mutate('library')}
-          disabled={analyzeMutation.isPending}>
-          <Text style={styles.secondaryButtonText}>ギャラリーから画像を選択</Text>
-        </Pressable>
-        {analyzeMutation.error ? (
-          <Text style={styles.errorText}>{analyzeMutation.error.message}</Text>
-        ) : null}
+      <View style={styles.controls} pointerEvents={analyzeMutation.isPending ? 'none' : 'auto'}>
+        <Text style={styles.caption}>布地を中央に合わせて撮影してください。</Text>
+
+        <View style={styles.buttonContainer}>
+          <Pressable
+            style={({ pressed }) => [styles.galleryButton, pressed && styles.buttonPressed]}
+            onPress={() => {
+              playHapticsLight();
+              analyzeMutation.mutate('library');
+            }}
+            disabled={analyzeMutation.isPending}>
+            <Text style={styles.galleryButtonText}>ライブラリ</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.shutterButton, pressed && styles.buttonPressed]}
+            onPress={() => {
+              playHapticsLight();
+              speak('色を調べています');
+              analyzeMutation.mutate('camera');
+            }}
+            disabled={analyzeMutation.isPending}>
+            <View style={styles.shutterInner} />
+          </Pressable>
+
+          <View style={styles.spacer} />
+        </View>
       </View>
+
+      {analyzeMutation.isPending && (
+        <View style={styles.overlay}>
+          <ActivityIndicator size={80} color="#FFFFFF" />
+          <Text style={styles.overlayText}>色を調べています...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -164,57 +184,109 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   controls: {
-    padding: 16,
-    gap: 10,
+    paddingTop: 24,
+    paddingBottom: 48,
+    paddingHorizontal: 20,
+    gap: 24,
     backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
   },
   caption: {
     color: '#111827',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  shutterButton: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#9CA3AF',
+  },
+  shutterInner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#1D4ED8',
+  },
+  galleryButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    height: 64,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  galleryButtonText: {
+    color: '#374151',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  spacer: {
+    minWidth: 100,
+  },
+  buttonPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }],
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    gap: 32,
+  },
+  overlayText: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
-    gap: 12,
+    gap: 16,
   },
   permissionText: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#111827',
     textAlign: 'center',
+    fontWeight: '600',
   },
   primaryButton: {
     backgroundColor: '#1D4ED8',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     alignItems: 'center',
+    minHeight: 64,
+    justifyContent: 'center',
   },
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2563EB',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: '#1D4ED8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  errorText: {
-    color: '#B91C1C',
-    fontSize: 14,
+    fontSize: 20,
+    fontWeight: '700',
   },
 });

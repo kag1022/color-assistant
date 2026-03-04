@@ -152,18 +152,29 @@ async function analyzeWithGeneratedClient(input: AnalyzeInput): Promise<ColorAna
     }
   }
 
+  if (lastError instanceof TypeError && lastError.message.includes('Network request failed')) {
+    throw new Error('通信に失敗しました。電波環境を確認してもう一度お試しください。');
+  }
+
   throw lastError instanceof Error ? lastError : new Error('Generated upload failed.');
 }
 
 async function analyzeWithManualFetch(input: AnalyzeInput): Promise<ColorAnalyzeResponse> {
-  const response = await fetch(`${input.baseUrl}/api/v1/color/analyze`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${input.token}`,
-    },
-    body: buildFormData(input),
-  });
-  return parseApiResponse<ColorAnalyzeResponse>(response);
+  try {
+    const response = await fetch(`${input.baseUrl}/api/v1/color/analyze`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.token}`,
+      },
+      body: buildFormData(input),
+    });
+    return parseApiResponse<ColorAnalyzeResponse>(response);
+  } catch (error) {
+    if (error instanceof TypeError && error.message.includes('Network request failed')) {
+      throw new Error('通信に失敗しました。電波環境を確認してもう一度お試しください。');
+    }
+    throw error;
+  }
 }
 
 export async function analyzeColorUpload(input: AnalyzeInput): Promise<ColorAnalyzeResponse> {
